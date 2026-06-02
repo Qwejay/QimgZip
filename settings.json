@@ -1,0 +1,8 @@
+{
+    "jpg_quality": 70,
+    "png_compress_level": 9,
+    "gif_max_colors": 64,
+    "webp_quality": 75,
+    "output_mode": "replace",
+    "output_suffix": "_压缩版"
+}
