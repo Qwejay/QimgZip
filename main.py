@@ -1,19 +1,34 @@
-import sys
 import os
+import sys
 import json
 import platform
 import subprocess
 import concurrent.futures
+
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout,
                             QWidget, QLabel, QListWidget, QDialog, QComboBox,
                             QRadioButton, QButtonGroup, QHBoxLayout, QFrame, QStackedLayout,
                             QFileDialog, QLineEdit, QScrollArea, QSizePolicy, QGroupBox, QMessageBox, QStatusBar,
                             QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QInputDialog,
-                            QGraphicsOpacityEffect, QCheckBox, QToolTip, QAction, QSlider, QSpinBox)
-
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup
+                            QGraphicsOpacityEffect, QCheckBox, QToolTip, QAction, QSlider, QSpinBox, QFileIconProvider)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPropertyAnimation, QEasingCurve, QTimer, QParallelAnimationGroup, QFileInfo
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QFont, QPalette, QColor, QIcon
+from PyQt5 import QtSvg
 from PIL import Image, ImageSequence
+
+
+def get_resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
+
+def get_data_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 
 def format_size(size_bytes):
@@ -34,15 +49,8 @@ class DropArea(QFrame):
         self.setFrameStyle(QFrame.NoFrame)
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border: 2px dashed #cccccc;
-                border-radius: 10px;
-            }
-            QFrame:hover {
-                background-color: #e8e8e8;
-                border: 2px dashed #999999;
-            }
+            QFrame { background-color: #f5f5f5; border: 2px dashed #cccccc; border-radius: 10px; }
+            QFrame:hover { background-color: #e8e8e8; border: 2px dashed #999999; }
         """)
         self.init_ui()
 
@@ -51,12 +59,13 @@ class DropArea(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.icon_label = QLabel("🖼")
+        self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.icon_label.setStyleSheet("""
-            QLabel { background: transparent; color: #999999; font-size: 48px; border: none; padding: 0px; padding-bottom: 0px; font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; }
+            QLabel { background: transparent; color: #999999; font-size: 72px; border: none; padding: 0px; padding-bottom: 0px; font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"; }
         """)
+        self._set_default_icon()
         layout.addWidget(self.icon_label)
 
         self.label = QLabel("将图片/文件夹拖拽至此处\n或 点击选择文件")
@@ -75,6 +84,26 @@ class DropArea(QFrame):
         """)
         layout.addWidget(self.sub_label)
         self.setLayout(layout)
+
+    def _set_default_icon(self):
+        svg_path = get_resource_path("icon.svg")
+        ico_path = get_resource_path("icon.ico")
+        
+        if os.path.exists(svg_path):
+            self.icon_label.setPixmap(QIcon(svg_path).pixmap(96, 96))
+        elif os.path.exists(ico_path):
+            self.icon_label.setPixmap(QIcon(ico_path).pixmap(96, 96))
+        elif getattr(sys, 'frozen', False):
+            provider = QFileIconProvider()
+            exe_icon = provider.icon(QFileInfo(sys.executable))
+            if not exe_icon.isNull():
+                self.icon_label.setPixmap(exe_icon.pixmap(96, 96))
+            else:
+                self.icon_label.clear()
+                self.icon_label.setText("🖼")
+        else:
+            self.icon_label.clear()
+            self.icon_label.setText("🖼")
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -160,6 +189,7 @@ class DropArea(QFrame):
                     self.sub_label.setText("可继续拖拽添加，或点击「开始压缩」")
 
     def show_success(self, count, saved_mb):
+        self.icon_label.clear()
         self.icon_label.setText("✅")
         if saved_mb > 0:
             self.label.setText(f"✓ 压缩完成：共 {count} 个文件，节省 {saved_mb:.2f} MB")
@@ -172,7 +202,7 @@ class DropArea(QFrame):
         QTimer.singleShot(5000, self.reset_label)
 
     def reset_label(self):
-        self.icon_label.setText("🖼")
+        self._set_default_icon()
         self.label.setText("将图片/文件夹拖拽至此处\n或 点击选择文件")
         self.label.setStyleSheet("""
             QLabel { background: transparent; color: #666666; font-size: 16px; font-weight: bold; border: none; padding: 10px; }
@@ -442,7 +472,7 @@ class SettingsPanel(QWidget):
             return self.default_settings.copy()
 
     def _get_settings_path(self):
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+        return get_data_path("settings.json")
 
     def save_settings(self):
         compress_map = {"快速": 1, "标准": 6, "极限": 9}
@@ -551,8 +581,7 @@ class CompressWorker(QThread):
                 return self._compress_generic(file_path, output_path)
             else:
                 return None
-        except Exception as e:
-            print(f"压缩错误 {file_path}: {str(e)}")
+        except Exception:
             return None
 
     def _get_output_path(self, file_path):
@@ -598,8 +627,6 @@ class CompressWorker(QThread):
             if compress_level == 9:
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
-                # ---------------- 核心修复点：PNG 压缩报错 ----------------
-                # 指定 method=2 (Fast Octree) 来完美支持 RGBA 图像的减色压缩
                 img = img.quantize(colors=256, method=2, dither=Image.Dither.FLOYDSTEINBERG)
                 
             save_kwargs = {
@@ -726,7 +753,6 @@ class FileTableWidget(QTableWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.setEditTriggers(QTableWidget.NoEditTriggers)
-        # 绑定双击事件
         self.cellDoubleClicked.connect(self.on_double_click)
 
     def on_double_click(self, row, col):
@@ -742,8 +768,8 @@ class FileTableWidget(QTableWidget):
                     subprocess.call(('open', path))
                 else:
                     subprocess.call(('xdg-open', path))
-            except Exception as e:
-                print(f"打开图片失败: {e}")
+            except Exception:
+                pass
 
     def open_folder(self, row):
         if isinstance(self.parent, MainWindow):
@@ -755,8 +781,8 @@ class FileTableWidget(QTableWidget):
                     subprocess.call(['open', '-R', path])
                 else:
                     subprocess.call(['xdg-open', os.path.dirname(path)])
-            except Exception as e:
-                print(f"打开文件夹失败: {e}")
+            except Exception:
+                pass
 
     def show_context_menu(self, pos):
         menu = QMenu(self)
@@ -799,11 +825,20 @@ class FileTableWidget(QTableWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("QimgZip 1.1 —— QwejayHuang")
+        self.setWindowTitle("QimgZip 1.1.2 —— QwejayHuang")
 
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+        if getattr(sys, 'frozen', False):
+            provider = QFileIconProvider()
+            exe_icon = provider.icon(QFileInfo(sys.executable))
+            if not exe_icon.isNull():
+                self.setWindowIcon(exe_icon)
+        else:
+            svg_path = get_resource_path("icon.svg")
+            ico_path = get_resource_path("icon.ico")
+            if os.path.exists(svg_path):
+                self.setWindowIcon(QIcon(svg_path))
+            elif os.path.exists(ico_path):
+                self.setWindowIcon(QIcon(ico_path))
 
         self.setStyleSheet("""
             QMainWindow { background-color: #ffffff; }
@@ -1137,7 +1172,7 @@ class MainWindow(QMainWindow):
             "webp_quality": 75, "output_mode": "replace", "output_suffix": "_压缩版"
         }
         try:
-            settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
+            settings_path = self._get_settings_path()
             if not os.path.exists(settings_path):
                 with open(settings_path, "w", encoding="utf-8") as f:
                     json.dump(default_settings, f, ensure_ascii=False, indent=4)
@@ -1161,6 +1196,19 @@ class MainWindow(QMainWindow):
         if self.toggle_list_btn.text() == "▲":
             self.toggle_list_btn.setText("▼")
 
+    def closeEvent(self, event):
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            reply = QMessageBox.question(self, '确认退出', '当前正在压缩图片，确认要中断并退出吗？',
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.worker.stop()
+                self.worker.wait(2000)
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
+
 
 if __name__ == '__main__':
     if hasattr(Qt, 'HighDpiScaleFactorRoundingPolicy'):
@@ -1171,9 +1219,18 @@ if __name__ == '__main__':
     
     app = QApplication(sys.argv)
 
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
+    if getattr(sys, 'frozen', False):
+        provider = QFileIconProvider()
+        exe_icon = provider.icon(QFileInfo(sys.executable))
+        if not exe_icon.isNull():
+            app.setWindowIcon(exe_icon)
+    else:
+        svg_path = get_resource_path("icon.svg")
+        ico_path = get_resource_path("icon.ico")
+        if os.path.exists(svg_path):
+            app.setWindowIcon(QIcon(svg_path))
+        elif os.path.exists(ico_path):
+            app.setWindowIcon(QIcon(ico_path))
 
     app.setStyle("Fusion")
     font = QFont("Microsoft YaHei", 9)
