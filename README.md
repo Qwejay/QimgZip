@@ -1,7 +1,6 @@
 # QimgZip 🖼️ 
 
 ![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![PySide6](https://img.shields.io/badge/PySide-6-1ea362.svg)
 ![Pillow](https://img.shields.io/badge/Pillow-Latest-yellow.svg)
 
