@@ -1,8 +1,21 @@
 {
-    "jpg_quality": 70,
+    "jpg_quality": 60,
     "png_compress_level": 9,
     "gif_max_colors": 64,
-    "webp_quality": 75,
-    "output_mode": "replace",
-    "output_suffix": "_压缩版"
+    "webp_quality": 60,
+    "output_mode": "覆盖原图",
+    "output_suffix": "_压缩版",
+    "compress_mode": "极致压缩 (体积优先)",
+    "output_dir": "",
+    "resize_mode": "限制长边",
+    "max_long_side": 1920,
+    "scale_ratio": 100,
+    "resample_algo": "Bicubic (平滑)",
+    "strip_exif": true,
+    "jpg_subsampling": "4:2:0 (较小体积)",
+    "png_quantize": true,
+    "png_colors": 128,
+    "webp_mode": "有损压缩",
+    "webp_method": 6,
+    "gif_colors": 64
 }
