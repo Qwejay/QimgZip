@@ -20,6 +20,7 @@ from PIL import Image, ImageSequence
 # 解除大图片（如超过 8900 万像素的超高分辨率全景图）的防炸弹限制，避免高分辨率大图压缩失败
 Image.MAX_IMAGE_PIXELS = None
 
+
 __app_name__ = "QimgZip"
 __version__ = "1.0.1"
 __author__ = "QwejayHuang"
@@ -333,8 +334,9 @@ class SettingsPanel(QWidget):
         l_resize.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._add_card(l_resize, "尺寸与缩放", "缩小超大分辨率图片是减小体积的最有效手段", [
             self._create_row("缩放模式:", self._create_combo("resize_mode", ["不调整", "限制长边", "按比例缩放"], self._on_resize_mode_changed)),
-            self._create_row("最大长边 (px):", self._create_spin("max_long_side", 100, 8000, " px")),
-            self._create_row("缩放比例 (%):", self._create_spin("scale_ratio", 1, 100, " %")),
+            self._create_row("最大长边 (px):", self._create_spin("max_long_side", 100, 8000, " px"), "row_max_side"),
+            self._create_row("缩放比例 (%):", self._create_spin("scale_ratio", 1, 100, " %"), "row_scale_ratio"),
+
             self._create_row("插值算法:", self._create_combo("resample_algo", ["Lanczos (高质量)", "Bicubic (平滑)", "Nearest (快速)"]))
         ])
         self.stack.addWidget(page_resize)
@@ -358,12 +360,14 @@ class SettingsPanel(QWidget):
         ])
         self._add_card(fmt_l, "PNG 设置", None, [
             self._create_row(self._create_checkbox("png_quantize", "启用颜色量化 (转为索引色，大幅减小体积)", self._on_png_q_changed), None),
-            self._create_row("最大颜色数:", self._create_combo("png_colors", ["256", "128", "64"])),
+            self._create_row("最大颜色数:", self._create_combo("png_colors", ["256", "128", "64"]), "row_png_colors"),
+
             self._create_row("压缩努力度:", self._create_spin("png_compress_level", 1, 9, " 级"))
         ])
         self._add_card(fmt_l, "WebP & GIF 设置", None, [
             self._create_row("WebP 模式:", self._create_combo("webp_mode", ["有损压缩", "无损压缩"], self._on_webp_mode_changed)),
-            self._create_slider_row("WebP 质量:", "webp_quality"),
+            self._create_slider_row("WebP 质量:", "webp_quality", "row_webp_quality"),
+
             self._create_row("WebP 编码复杂度:", self._create_spin("webp_method", 0, 6, " (0最快-6最小)")),
             self._create_row("GIF 色彩数:", self._create_combo("gif_colors", ["256", "128", "64", "32"]))
         ])
@@ -387,8 +391,9 @@ class SettingsPanel(QWidget):
         
         self._add_card(l_out, "保存位置", "定义压缩后文件的存储方式", [
             self._create_row("输出模式:", self._create_combo("output_mode", ["覆盖原图", "追加后缀", "输出到指定文件夹"], self._on_out_mode_changed)),
-            self._create_row("文件后缀:", self._create_lineedit("output_suffix", "_压缩版")),
-            self._create_row("目标文件夹:", dir_layout)
+            self._create_row("文件后缀:", self._create_lineedit("output_suffix", "_压缩版"), "row_out_suffix"),
+            self._create_row("目标文件夹:", dir_layout, "row_out_dir")
+
         ])
         self.stack.addWidget(page_out)
 
@@ -543,16 +548,19 @@ class SettingsPanel(QWidget):
             self._is_loading = False
 
     def _on_resize_mode_changed(self, mode):
-        pass
+        self.ui_refs["row_max_side"].setVisible(mode == "限制长边")
+        self.ui_refs["row_scale_ratio"].setVisible(mode == "按比例缩放")
 
     def _on_png_q_changed(self, checked):
-        pass
+        self.ui_refs["row_png_colors"].setVisible(checked)
         
     def _on_webp_mode_changed(self, mode):
-        pass
+        self.ui_refs["row_webp_quality"].setVisible(mode == "有损压缩")
 
     def _on_out_mode_changed(self, mode):
-        pass
+        self.ui_refs["row_out_suffix"].setVisible(mode == "追加后缀")
+        self.ui_refs["row_out_dir"].setVisible(mode == "输出到指定文件夹")
+
         
     def _browse_dir(self):
         d = QFileDialog.getExistingDirectory(self, "选择输出文件夹")
@@ -591,6 +599,12 @@ class SettingsPanel(QWidget):
         self.ui_refs["output_suffix"].setText(s.get("output_suffix", "_压缩版"))
         self.ui_refs["output_dir"].setText(s.get("output_dir", ""))
         
+        self._on_resize_mode_changed(s.get("resize_mode", "限制长边"))
+        self._on_png_q_changed(s.get("png_quantize", False))
+        self._on_webp_mode_changed(s.get("webp_mode", "有损压缩"))
+        self._on_out_mode_changed(s.get("output_mode", "追加后缀"))
+        
+
         self._is_loading = False
 
     def load_settings(self):
@@ -670,6 +684,7 @@ class CompressWorker(QThread):
             if num_files > 50:
                 self.files = self.files[:50]
         
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(self._process_single_file, fp): fp for fp in self.files if self._is_running}
             for future in concurrent.futures.as_completed(futures):
@@ -758,30 +773,33 @@ class CompressWorker(QThread):
         elif ext in ('.bmp', '.tiff', '.tif', '.ico', '.tga'): return self._compress_generic(file_path)
         return None
 
+    def _save_safely(self, img, input_path, output_path, **kwargs):
+        if input_path == output_path:
+            temp_path = input_path + ".tmp"
+            img.save(temp_path, **kwargs)
+            os.replace(temp_path, output_path)
+        else:
+            img.save(output_path, **kwargs)
+
     def _compress_jpg(self, input_path):
         out = self._get_output_path(input_path)
-        temp_out = out + ".tmp" if input_path == out else out
         q = self.settings.get("jpg_quality", 80)
         sub = 0 if "4:4:4" in self.settings.get("jpg_subsampling", "4:2:0") else 2
         
-        kwargs = {'format': 'JPEG', 'quality': q, 'optimize': True, 'progressive': True, 'subsampling': sub}
-        
+
         with Image.open(input_path) as img:
             exif = img.info.get('exif') if not self.settings.get("strip_exif", True) else None
             img = self._resize_image(img)
             if img.mode != 'RGB': img = img.convert('RGB')
+            kwargs = {'format': 'JPEG', 'quality': q, 'optimize': True, 'progressive': True, 'subsampling': sub}
             if exif: kwargs['exif'] = exif
-            img.save(temp_out, **kwargs)
             
-        if input_path == out:
-            os.replace(temp_out, out)
-            
+            self._save_safely(img, input_path, out, **kwargs)
+
         return (out, os.path.getsize(out))
 
     def _compress_png(self, input_path):
         out = self._get_output_path(input_path)
-        temp_out = out + ".tmp" if input_path == out else out
-        
         with Image.open(input_path) as img:
             img = self._resize_image(img)
             if self.settings.get("png_quantize", False):
@@ -792,18 +810,14 @@ class CompressWorker(QThread):
             if not self.settings.get("strip_exif", True) and 'exif' in img.info:
                 kwargs['exif'] = img.info['exif']
                 
-            img.save(temp_out, **kwargs)
-            
-        if input_path == out:
-            os.replace(temp_out, out)
-            
+            self._save_safely(img, input_path, out, **kwargs)
+
         return (out, os.path.getsize(out))
 
     def _compress_gif(self, input_path):
         out = self._get_output_path(input_path)
-        temp_out = out + ".tmp" if input_path == out else out
         max_c = self.settings.get("gif_colors", 128)
-        
+
         with Image.open(input_path) as img:
             frames, durations = [], []
             loop = img.info.get('loop', 0)
@@ -820,16 +834,12 @@ class CompressWorker(QThread):
                 durations = durations[::2]
                 
             kwargs = {'save_all': True, 'append_images': frames[1:] if len(frames)>1 else [], 'duration': durations, 'loop': loop, 'optimize': True}
-            frames[0].save(temp_out, **kwargs)
-            
-        if input_path == out:
-            os.replace(temp_out, out)
-            
+            self._save_safely(frames[0], input_path, out, **kwargs)
+
         return (out, os.path.getsize(out))
 
     def _compress_webp(self, input_path):
         out = self._get_output_path(input_path)
-        temp_out = out + ".tmp" if input_path == out else out
         lossless = self.settings.get("webp_mode") == "无损压缩"
         q = self.settings.get("webp_quality", 80)
         m = self.settings.get("webp_method", 4)
@@ -840,17 +850,12 @@ class CompressWorker(QThread):
             kwargs = {'format': 'WEBP', 'lossless': lossless, 'method': m}
             if not lossless: kwargs['quality'] = q
             if exif: kwargs['exif'] = exif
-            img.save(temp_out, **kwargs)
-            
-        if input_path == out:
-            os.replace(temp_out, out)
-            
+            self._save_safely(img, input_path, out, **kwargs)
+
         return (out, os.path.getsize(out))
 
     def _compress_generic(self, input_path):
         out = self._get_output_path(input_path, ".png")
-        temp_out = out + ".tmp" if input_path == out else out
-        
         with Image.open(input_path) as img:
             img = self._resize_image(img)
             if img.mode not in ('RGB', 'RGBA'):
@@ -858,14 +863,12 @@ class CompressWorker(QThread):
             kwargs = {'format': 'PNG', 'optimize': True, 'compress_level': 9}
             if self.settings.get("png_quantize", False):
                 img = img.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
-            img.save(temp_out, **kwargs)
+            self._save_safely(img, input_path, out, **kwargs)
+            if self.settings.get("output_mode") == "覆盖原图" and input_path != out:
+                try: os.remove(input_path)
+                except Exception: pass
             
-        if input_path == out:
-            os.replace(temp_out, out)
-        elif self.settings.get("output_mode") == "覆盖原图" and input_path != out:
-            try: os.remove(input_path)
-            except Exception: pass
-            
+
         return (out, os.path.getsize(out))
 
     def stop(self):
@@ -997,7 +1000,8 @@ class MainWindow(QMainWindow):
         self.file_list.setColumnWidth(1, 85)
         self.file_list.setColumnWidth(2, 85)
         self.file_list.setColumnWidth(3, 75)
-        self.file_list.setColumnWidth(4, 65)
+        self.file_list.setColumnWidth(4, 55)
+
         self.file_list.setMinimumHeight(200)
         self.file_list.setVisible(False)
         self.file_list.setShowGrid(False)
