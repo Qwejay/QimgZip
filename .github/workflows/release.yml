@@ -1,0 +1,29 @@
+name: Build & Release Executable
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Build Binary
+        run: |
+          pyinstaller --noconsole --onefile --name QimgZip main.py
+      - name: Upload Artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*

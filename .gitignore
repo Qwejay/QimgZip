@@ -1,0 +1,26 @@
+# Python 字节码与缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 本地虚拟环境
+venv/
+.venv/
+env/
+
+# IDE 与编辑器配置
+.vscode/
+.idea/
+*.swp
+
+# 打包构建生成物
+build/
+dist/
+*.spec
+
+# 本地生成的运行时配置文件（避免覆盖用户的配置）
+settings.json
+
+# 操作系统临时文件
+Thumbs.db
+.DS_Store
